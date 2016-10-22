@@ -3,12 +3,13 @@
 import os
 import sys
 import email.parser
+from email.header import decode_header
 import dateutil.parser
 import dkim
 import csv
 import re
 
-header_row = ['id', 'has-sig', 'date', 'date text', 'from', 'to', 'subject', 'message-id', 'verified']
+header_row = ['id', 'has-sig', 'date', 'from', 'to', 'subject', 'message-id', 'verified']
 unpleasant_chars = re.compile("[\n\r]")  # stuff that's not great in CSVs
 
 def emit_csv(filename, email_directory):
@@ -17,11 +18,8 @@ def emit_csv(filename, email_directory):
         writer.writerow(header_row)
         process_emails(writer, email_directory)
 
-def clean_field(s):
-    if isinstance(s, basestring):
-        return unpleasant_chars.sub(' ', s)
-    else:
-        return s
+def clean_header(h):
+    return unpleasant_chars.sub(' ', ','.join([value for (value, encoding) in decode_header(h)]))
 
 def process_emails(writer, email_directory):
     for filesplit in sorted(map(os.path.splitext, os.listdir(email_directory)),key = lambda f: int(f[0])):
@@ -35,8 +33,7 @@ def process_emails(writer, email_directory):
             date = dateutil.parser.parse(msg['date'])
             if msg['dkim-signature'] is not None:
                 has_sig = True
-            meta = [has_sig, date, msg['date'], msg['from'], msg['to'], msg['subject'], msg['message-id']]
-            meta = [clean_field(f) for f in meta]
+            meta = [has_sig, date, clean_header(msg['from']), clean_header(msg['to']), clean_header(msg['subject']), clean_header(msg['message-id'])]
             row += meta
         except (RuntimeError, StandardError) as e:
             print "parse email exception %s" % e
@@ -54,7 +51,6 @@ def process_emails(writer, email_directory):
         except (RuntimeError, StandardError, dkim.MessageFormatError) as e:
             print "DKIM verify exception on message %s: %s" % (filename, e)
             pass
-
 
         writer.writerow(row)
 
